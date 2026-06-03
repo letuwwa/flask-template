@@ -1,1 +1,3 @@
-from ..routers.index import index_bp as index_bp
+from .index import index_bp
+
+__all__ = ("index_bp",)

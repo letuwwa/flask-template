@@ -1,8 +1,10 @@
-import uuid
-from ..extensions import db
 from datetime import datetime
+import uuid
+
 from sqlalchemy import DateTime, func
 from sqlalchemy.orm import Mapped, mapped_column
+
+from ..extensions import db
 
 
 class TimestampMixin:

@@ -1,8 +1,8 @@
 from flask import Flask
 
-from .routers import index_bp
 from . import models as models
 from .extensions import cors, db, migrate
+from .routers import index_bp
 
 
 def create_app():
