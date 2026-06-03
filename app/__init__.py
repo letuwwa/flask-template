@@ -1,19 +1,17 @@
 from flask import Flask
 
+# Import models so Flask-Migrate sees them in db.metadata.
 from . import models as models
-from .extensions import cors, db, migrate
-from .routers import index_bp
+
+from .routers import register_blueprints
+from .extensions import register_extensions
 
 
 def create_app():
     app = Flask(__name__)
     app.config.from_object("app.config.Config")
 
-    cors.init_app(app, origins=app.config["CORS_ORIGINS"])
-
-    db.init_app(app)
-    migrate.init_app(app, db)
-
-    app.register_blueprint(index_bp)
+    register_extensions(app)
+    register_blueprints(app)
 
     return app
