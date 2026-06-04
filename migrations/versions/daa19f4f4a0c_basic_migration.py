@@ -1,17 +1,17 @@
-"""basic_migration
+"""basic migration
 
-Revision ID: a1985fffed5e
+Revision ID: daa19f4f4a0c
 Revises:
-Create Date: 2026-06-03 11:43:07.454851
+Create Date: 2026-06-04 11:00:41.196173
 
 """
 
-import sqlalchemy as sa
 from alembic import op
+import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision = "a1985fffed5e"
+revision = "daa19f4f4a0c"
 down_revision = None
 branch_labels = None
 depends_on = None
