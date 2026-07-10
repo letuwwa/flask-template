@@ -1,8 +1,16 @@
+import enum
+
+from sqlalchemy import Enum
 from sqlalchemy import String
 from sqlalchemy.orm import Mapped, mapped_column
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from app.models.base_model import BaseModel
+
+
+class UserRole(str, enum.Enum):
+    ADMIN = "admin"
+    REGULAR = "regular"
 
 
 class User(BaseModel):
@@ -37,6 +45,12 @@ class User(BaseModel):
         nullable=False,
     )
 
+    role: Mapped[UserRole] = mapped_column(
+        Enum(UserRole, name="user_role"),
+        default=UserRole.REGULAR,
+        nullable=False,
+    )
+
     def set_password(self, password: str) -> None:
         self.password_hash = generate_password_hash(password)
 
@@ -50,5 +64,6 @@ class User(BaseModel):
             "username": self.username,
             "first_name": self.first_name,
             "last_name": self.last_name,
+            "role": self.role.value,
             "is_active": self.is_active,
         }

@@ -13,7 +13,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 
 from app.extensions import db
-from app.models import TokenBlocklist, User
+from app.models import TokenBlocklist, User, UserRole
 
 
 auth_bp = Blueprint("auth", __name__, url_prefix="/auth")
@@ -51,6 +51,7 @@ def register():
         first_name=data["first_name"].strip(),
         last_name=data["last_name"].strip(),
         is_active=True,
+        role=UserRole.REGULAR,
     )
     user.set_password(data["password"])
 
@@ -132,11 +133,36 @@ def me():
     return {"user": current_user.to_dict()}, 200
 
 
+@auth_bp.get("/admin-only", strict_slashes=False)
+@jwt_required()
+def admin_only():
+    if current_user is None:
+        return {"message": "User not found"}, 401
+
+    if not current_user.is_active:
+        return {"message": "User account is disabled"}, 403
+
+    if current_user.role != UserRole.ADMIN:
+        return {"message": "Admin access required"}, 403
+
+    return {
+        "message": "Admin access granted",
+        "user_id": str(current_user.id),
+    }, 200
+
+
 def _create_token_pair(user: User) -> dict[str, str]:
     identity = str(user.id)
+    additional_claims = {"role": user.role.value}
     return {
-        "access_token": create_access_token(identity=identity),
-        "refresh_token": create_refresh_token(identity=identity),
+        "access_token": create_access_token(
+            identity=identity,
+            additional_claims=additional_claims,
+        ),
+        "refresh_token": create_refresh_token(
+            identity=identity,
+            additional_claims=additional_claims,
+        ),
     }
 
 

@@ -27,6 +27,9 @@ def upgrade():
         sa.Column("last_name", sa.String(length=30), nullable=False),
         sa.Column("is_active", sa.Boolean(), nullable=False),
         sa.Column("password_hash", sa.String(length=255), nullable=False),
+        sa.Column(
+            "role", sa.Enum("ADMIN", "REGULAR", name="user_role"), nullable=False
+        ),
         sa.Column("id", sa.Uuid(), nullable=False),
         sa.Column(
             "created_at",
