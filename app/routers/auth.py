@@ -1,16 +1,15 @@
 import re
-from datetime import datetime, timezone
-
+from sqlalchemy import or_, select
 from flask import Blueprint, request
+from datetime import datetime, timezone
+from sqlalchemy.exc import IntegrityError
 from flask_jwt_extended import (
-    create_access_token,
-    create_refresh_token,
-    current_user,
     get_jwt,
     jwt_required,
+    current_user,
+    create_access_token,
+    create_refresh_token,
 )
-from sqlalchemy import or_, select
-from sqlalchemy.exc import IntegrityError
 
 from app.extensions import db
 from app.models import TokenBlocklist, User, UserRole
@@ -22,11 +21,6 @@ EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 USERNAME_PATTERN = re.compile(r"^[a-z0-9_-]+$")
 MIN_PASSWORD_LENGTH = 12
 MAX_PASSWORD_LENGTH = 128
-
-
-@auth_bp.route("", strict_slashes=False)
-def index():
-    return {"status": "ok"}, 200
 
 
 @auth_bp.post("/register", strict_slashes=False)
