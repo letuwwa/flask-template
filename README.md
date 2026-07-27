@@ -61,6 +61,31 @@ uv run flask --app run.py run
 
 The API is served at `http://localhost:5000`.
 
+## Docker
+
+Build and run the backend with PostgreSQL 17:
+```bash
+docker compose up --build
+```
+
+The backend is served at `http://localhost:5000`. The database is exposed on
+host port `5432`.
+
+Compose starts only the backend and database services. The backend container
+runs migrations on startup before serving requests and uses the database service
+hostname internally:
+```env
+DATABASE_URL=postgresql://postgres:postgres@database:5432/flask_template
+```
+
+Database data is not persisted with a named volume. Removing the database
+container removes its data.
+
+Stop and remove the containers:
+```bash
+docker compose down
+```
+
 Register a user:
 ```bash
 curl -X POST http://localhost:5000/auth/register \
@@ -130,7 +155,5 @@ Done:
 - Env variables support
 - DB base model and migrations setup
 - JWT auth with refresh/logout and role-based admin protection
-
-To do:
-- Docker pre-settings
-- Docs
+- Docker backend and PostgreSQL 17 setup
+- Docker usage docs
