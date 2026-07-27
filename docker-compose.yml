@@ -1,0 +1,32 @@
+services:
+  backend:
+    build:
+      context: .
+      args:
+        PYTHON_VERSION: "3.14"
+    ports:
+      - "5000:5000"
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@database:5432/flask_template
+      SECRET_KEY: change-me-in-production-use-a-long-random-value
+      JWT_SECRET_KEY: change-me-in-production-use-a-long-random-value-32-bytes-min
+      FLASK_DEBUG: "true"
+      CORS_ORIGINS: "*"
+    depends_on:
+      database:
+        condition: service_healthy
+
+  database:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: flask_template
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_USER: postgres
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d flask_template"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
