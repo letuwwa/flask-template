@@ -1,0 +1,78 @@
+import re
+from flask import request
+from flask_jwt_extended import create_access_token, create_refresh_token
+
+from app.models import User
+
+
+EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+USERNAME_PATTERN = re.compile(r"^[a-z0-9_-]+$")
+MIN_PASSWORD_LENGTH = 12
+MAX_PASSWORD_LENGTH = 128
+
+
+def create_token_pair(user: User) -> dict[str, str]:
+    identity = str(user.id)
+    additional_claims = {"role": user.role.value}
+    return {
+        "access_token": create_access_token(
+            identity=identity,
+            additional_claims=additional_claims,
+        ),
+        "refresh_token": create_refresh_token(
+            identity=identity,
+            additional_claims=additional_claims,
+        ),
+    }
+
+
+def json_body() -> dict:
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return {}
+    return data
+
+
+def validate_register_payload(data: dict) -> dict[str, str]:
+    errors = {}
+
+    email = string_value(data, "email").strip().lower()
+    username = string_value(data, "username").strip().lower()
+    password = string_value(data, "password")
+    first_name = string_value(data, "first_name").strip()
+    last_name = string_value(data, "last_name").strip()
+
+    if not EMAIL_PATTERN.match(email) or len(email) > 255:
+        errors["email"] = "A valid email is required"
+
+    if not 3 <= len(username) <= 100 or not USERNAME_PATTERN.match(username):
+        errors["username"] = (
+            "Username must be 3-100 characters and contain only lowercase letters, "
+            "numbers, underscores, and hyphens"
+        )
+
+    if not MIN_PASSWORD_LENGTH <= len(password) <= MAX_PASSWORD_LENGTH:
+        errors["password"] = "Password must be 12-128 characters"
+
+    if not 1 <= len(first_name) <= 30:
+        errors["first_name"] = "First name must be 1-30 characters"
+
+    if not 1 <= len(last_name) <= 30:
+        errors["last_name"] = "Last name must be 1-30 characters"
+
+    return errors
+
+
+def string_value(data: dict, key: str) -> str:
+    value = data.get(key)
+    if isinstance(value, str):
+        return value
+    return ""
+
+
+def login_identifier(data: dict) -> str:
+    for key in ("identifier", "email", "username"):
+        value = string_value(data, key).strip().lower()
+        if value:
+            return value
+    return ""
