@@ -6,9 +6,9 @@ and role-based admin protection.
 
 ## Stack
 
-- Python 3.14+
+- Python 3.14.7
 - Flask 3
-- PostgreSQL 17
+- PostgreSQL 18.6
 - SQLAlchemy and Flask-Migrate
 - Flask-JWT-Extended
 - Flask-Limiter
@@ -18,28 +18,31 @@ and role-based admin protection.
 
 ## Requirements
 
-- Python 3.14+
+- Python 3.14+ (the container currently uses 3.14.7)
 - uv
 - PostgreSQL for local development, or Docker Compose for the full stack
 
 ## Local Setup
 
-Install dependencies:
+Install the locked dependencies:
 
 ```bash
-uv sync
+uv sync --locked
 ```
 
 Create a `.env` file:
 
 ```env
 DATABASE_URL=postgresql://postgres:<database-password>@localhost:5432/flask_template
+POSTGRES_USER=postgres
 POSTGRES_PASSWORD=<database-password>
+POSTGRES_PORT=5432
 SECRET_KEY=<long-random-secret>
 JWT_SECRET_KEY=<long-random-secret>
 FLASK_DEBUG=false
 CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
 RATELIMIT_STORAGE_URI=memory://
+MAX_CONTENT_LENGTH=1048576
 ```
 
 You can start from the checked-in example with `cp .env.example .env`.
@@ -50,17 +53,35 @@ Generate suitable local secrets:
 openssl rand -hex 32
 ```
 
-`DATABASE_URL` and `SECRET_KEY` are required outside debug mode.
-`JWT_SECRET_KEY` is required unless `SECRET_KEY` is at least 32 bytes. In debug
-mode only, the app can fall back to development secrets.
+`DATABASE_URL` and a `SECRET_KEY` of at least 32 bytes are required outside
+debug mode. Invalid boolean and integer configuration values stop startup with
+a clear error instead of silently selecting a potentially unsafe default.
+`JWT_SECRET_KEY`, when set, must also be at least 32 bytes; otherwise the app
+uses `SECRET_KEY` for JWT signing. In debug mode only, the app can fall back to
+development secrets.
 
 ## Database
 
-Create the local database if it does not exist:
+Start the persistent PostgreSQL database on localhost:
 
 ```bash
-createdb flask_template
+docker compose up -d database --wait
 ```
+
+The default host port is `127.0.0.1:5432`. If that port is occupied, set
+`POSTGRES_PORT` in `.env` and use the same port in `DATABASE_URL`, for example:
+
+```env
+POSTGRES_PORT=5433
+DATABASE_URL=postgresql://postgres:<database-password>@localhost:5433/flask_template
+```
+
+Database files are stored in the `postgres_data` named volume and survive
+container recreation. PostgreSQL 18 uses `/var/lib/postgresql` as its persistent
+volume root.
+
+Alternatively, when using a system PostgreSQL server, create the database with
+`createdb flask_template`.
 
 Run migrations:
 
@@ -99,27 +120,28 @@ docker compose up --build
 ```
 
 The backend waits for PostgreSQL to become healthy, runs migrations, removes
-expired revocation records, then starts Gunicorn on `http://localhost:5000`.
+expired revocation records, then starts Gunicorn as an unprivileged user on
+`http://localhost:5000`.
 
 Docker Compose starts a `backend` service and a `database` service. The backend
 connects to PostgreSQL through the internal Compose hostname:
 
 ```env
-DATABASE_URL=postgresql://postgres:<database-password>@database:5432/flask_template
+DATABASE_URL=postgresql://<database-user>:<database-password>@database:5432/flask_template
 ```
 
-The API binds only to `127.0.0.1:5000`. PostgreSQL is available only on the
-internal Compose network. Use a local PostgreSQL installation for host-side
-database access.
-
-Database data is not mounted to a named volume, so recreating the PostgreSQL
-container resets local Docker database state.
+The API and PostgreSQL ports bind only to `127.0.0.1`. Containers communicate
+over the private Compose network while host-side tools can connect through the
+configured `POSTGRES_PORT`.
 
 Stop and remove the containers:
 
 ```bash
 docker compose down
 ```
+
+`docker compose down` preserves database data. Add `--volumes` only when you
+intentionally want to delete the local database.
 
 ## Authentication
 
@@ -189,6 +211,9 @@ limited to 10 requests per minute. The in-memory limiter is suitable for the
 default single-worker setup. Configure a shared Flask-Limiter storage URI, such
 as Redis, before running multiple workers or application instances.
 
+Request bodies are limited to 1 MiB by default (`MAX_CONTENT_LENGTH`), auth
+responses disable caching, and API responses include MIME-sniffing protection.
+
 Expired revocation records are cleaned hourly during authenticated traffic and
 at container startup. They can also be removed manually:
 
@@ -211,6 +236,7 @@ last_name   1-30 characters
 Run Ruff:
 
 ```bash
+uv run ruff format --check .
 uv run ruff check .
 ```
 
@@ -219,6 +245,15 @@ Run the automated tests:
 ```bash
 uv run pytest
 ```
+
+Audit locked dependencies for published vulnerabilities:
+
+```bash
+uvx pip-audit
+```
+
+The lockfile was refreshed on 2026-08-26. The audit reported no known
+vulnerabilities at that time.
 
 ## Project Layout
 
