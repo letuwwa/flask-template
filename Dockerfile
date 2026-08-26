@@ -1,6 +1,6 @@
-ARG PYTHON_VERSION=3.14
+ARG PYTHON_VERSION=3.14.7
 
-FROM ghcr.io/astral-sh/uv:latest AS uv
+FROM ghcr.io/astral-sh/uv:0.12.5 AS uv
 FROM python:${PYTHON_VERSION}-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -12,15 +12,16 @@ WORKDIR /app
 
 COPY --from=uv /uv /uvx /usr/local/bin/
 
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends build-essential libpq-dev \
-    && rm -rf /var/lib/apt/lists/*
-
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
 
 COPY . .
 RUN uv sync --frozen --no-dev
+
+RUN addgroup --system app \
+    && adduser --system --ingroup app app
+
+USER app
 
 EXPOSE 5000
 
