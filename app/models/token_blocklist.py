@@ -14,6 +14,12 @@ class TokenBlocklist(BaseModel):
         index=True,
         nullable=False,
     )
+    session_id: Mapped[str | None] = mapped_column(
+        String(36),
+        unique=True,
+        index=True,
+        nullable=True,
+    )
     token_type: Mapped[str] = mapped_column(
         String(16),
         nullable=False,

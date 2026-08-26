@@ -47,13 +47,31 @@ def _jwt_secret_key() -> str:
     )
 
 
+def _secret_key() -> str:
+    value = os.getenv("SECRET_KEY")
+    if value:
+        return value
+
+    if _env_bool("FLASK_DEBUG"):
+        return "dev-secret-key-change-me-for-local-use-only"
+
+    raise RuntimeError("SECRET_KEY environment variable is required")
+
+
 class Config:
     DEBUG = _env_bool("FLASK_DEBUG")
-    SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret-key-change-me-for-local-use-only")
+    SECRET_KEY = _secret_key()
     JWT_SECRET_KEY = _jwt_secret_key()
     JWT_ACCESS_TOKEN_EXPIRES = timedelta(minutes=15)
     JWT_REFRESH_TOKEN_EXPIRES = timedelta(days=30)
-    CORS_ORIGINS = _env_csv("CORS_ORIGINS")
+    CORS_ORIGINS = _env_csv(
+        "CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000"
+    )
+    RATELIMIT_STORAGE_URI = os.getenv("RATELIMIT_STORAGE_URI", "memory://")
+    RATELIMIT_HEADERS_ENABLED = True
+    TOKEN_BLOCKLIST_CLEANUP_INTERVAL = int(
+        os.getenv("TOKEN_BLOCKLIST_CLEANUP_INTERVAL", "3600")
+    )
 
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     SQLALCHEMY_DATABASE_URI = _required_env("DATABASE_URL")

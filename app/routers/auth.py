@@ -9,7 +9,7 @@ from flask_jwt_extended import (
     create_access_token,
 )
 
-from app.extensions import db
+from app.extensions import db, limiter
 from app.models import TokenBlocklist, User, UserRole
 from app.routers.utils import (
     json_body,
@@ -24,6 +24,7 @@ auth_bp = Blueprint("auth", __name__, url_prefix="/auth")
 
 
 @auth_bp.post("/register", strict_slashes=False)
+@limiter.limit("5 per hour")
 def register():
     data = json_body()
     errors = validate_register_payload(data)
@@ -54,12 +55,18 @@ def register():
         db.session.commit()
     except IntegrityError:
         db.session.rollback()
+        existing_user = db.session.execute(
+            select(User.id).where(or_(User.email == email, User.username == username))
+        ).scalar_one_or_none()
+        if existing_user is None:
+            raise
         return {"message": "Email or username is already registered"}, 409
 
     return {"user": user.to_dict(), "tokens": create_token_pair(user)}, 201
 
 
 @auth_bp.post("/login", strict_slashes=False)
+@limiter.limit("10 per minute")
 def login():
     data = json_body()
     identifier = login_identifier(data)
@@ -89,7 +96,16 @@ def refresh():
     if not current_user.is_active:
         return {"message": "User account is disabled"}, 403
 
-    access_token = create_access_token(identity=str(current_user.id))
+    token = get_jwt()
+    additional_claims = {
+        "role": current_user.role.value,
+        "sid": token.get("sid"),
+        "sexp": token.get("sexp"),
+    }
+    access_token = create_access_token(
+        identity=str(current_user.id),
+        additional_claims=additional_claims,
+    )
     return {"access_token": access_token}, 200
 
 
@@ -97,10 +113,13 @@ def refresh():
 @jwt_required(verify_type=False)
 def logout():
     token = get_jwt()
-    expires_at = datetime.fromtimestamp(token["exp"], tz=timezone.utc)
+    expires_at = datetime.fromtimestamp(
+        token.get("sexp", token["exp"]), tz=timezone.utc
+    )
 
     revoked_token = TokenBlocklist(
         jti=token["jti"],
+        session_id=token.get("sid"),
         token_type=token["type"],
         user_id=token["sub"],
         expires_at=expires_at,
@@ -111,6 +130,14 @@ def logout():
         db.session.commit()
     except IntegrityError:
         db.session.rollback()
+        criteria = [TokenBlocklist.jti == token["jti"]]
+        if token.get("sid"):
+            criteria.append(TokenBlocklist.session_id == token["sid"])
+        already_revoked = db.session.execute(
+            select(TokenBlocklist.id).where(or_(*criteria))
+        ).scalar_one_or_none()
+        if already_revoked is None:
+            raise
 
     return {"message": "Token revoked"}, 200
 
