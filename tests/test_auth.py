@@ -1,10 +1,9 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
 
 from app.extensions import cleanup_expired_tokens, db
 from app.models import TokenBlocklist
-
 
 REGISTER_PAYLOAD = {
     "email": "user@example.com",
@@ -72,7 +71,7 @@ def test_refresh_preserves_session_revocation(client):
 
 
 def test_cleanup_deletes_only_expired_revocations(app):
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     db.session.add_all(
         [
             TokenBlocklist(
@@ -108,3 +107,21 @@ def test_login_is_rate_limited(client):
     assert all(response.status_code == 401 for response in responses[:10])
     assert responses[10].status_code == 429
     assert responses[10].get_json() == {"message": "Rate limit exceeded"}
+
+
+def test_authentication_responses_disable_caching(client):
+    response = client.post("/auth/login", json={})
+
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["X-Content-Type-Options"] == "nosniff"
+
+
+def test_oversized_request_returns_json_error(client):
+    response = client.post(
+        "/auth/register",
+        data=b"x" * 1_048_577,
+        content_type="application/json",
+    )
+
+    assert response.status_code == 413
+    assert response.get_json() == {"message": "Request body is too large"}

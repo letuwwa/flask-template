@@ -1,19 +1,19 @@
-import uuid
 import time
-from datetime import datetime, timezone
+import uuid
+from datetime import UTC, datetime
 from threading import Lock
 
 import click
-from flask import Flask, current_app
+from flask import Flask, current_app, request
 from flask_cors import CORS
+from flask_jwt_extended import JWTManager
 from flask_limiter import Limiter
 from flask_limiter.errors import RateLimitExceeded
 from flask_limiter.util import get_remote_address
-from sqlalchemy import delete, or_, select
 from flask_migrate import Migrate
 from flask_sqlalchemy import SQLAlchemy
-from flask_jwt_extended import JWTManager
-
+from sqlalchemy import delete, or_, select
+from werkzeug.exceptions import RequestEntityTooLarge
 
 cors = CORS()
 db = SQLAlchemy()
@@ -36,6 +36,17 @@ def register_extensions(app: Flask) -> None:
     def handle_rate_limit(error: RateLimitExceeded):
         return {"message": "Rate limit exceeded"}, 429
 
+    @app.errorhandler(RequestEntityTooLarge)
+    def handle_request_too_large(error: RequestEntityTooLarge):
+        return {"message": "Request body is too large"}, 413
+
+    @app.after_request
+    def add_security_headers(response):
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        if request.blueprint == "auth":
+            response.headers.setdefault("Cache-Control", "no-store")
+        return response
+
     @app.cli.command("cleanup-token-blocklist")
     def cleanup_token_blocklist_command() -> None:
         """Delete expired JWT revocation records."""
@@ -47,12 +58,10 @@ def cleanup_expired_tokens() -> int:
     from app.models import TokenBlocklist
 
     result = db.session.execute(
-        delete(TokenBlocklist).where(
-            TokenBlocklist.expires_at <= datetime.now(timezone.utc)
-        )
+        delete(TokenBlocklist).where(TokenBlocklist.expires_at <= datetime.now(UTC))
     )
     db.session.commit()
-    return result.rowcount
+    return result.rowcount or 0
 
 
 def _cleanup_expired_tokens_if_due() -> None:
@@ -86,7 +95,7 @@ def is_token_revoked(jwt_header: dict, jwt_payload: dict) -> bool:
     if session_id:
         criteria.append(TokenBlocklist.session_id == session_id)
     token = db.session.execute(
-        select(TokenBlocklist.id).where(or_(*criteria))
+        select(TokenBlocklist.id).where(or_(*criteria)).limit(1)
     ).scalar_one_or_none()
     return token is not None
 
@@ -98,7 +107,7 @@ def load_user(jwt_header: dict, jwt_payload: dict):
     identity = jwt_payload["sub"]
     try:
         user_id = uuid.UUID(identity)
-    except ValueError:
+    except AttributeError, TypeError, ValueError:
         return None
 
     return db.session.get(User, user_id)

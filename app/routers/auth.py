@@ -1,24 +1,24 @@
+from datetime import UTC, datetime
+
 from flask import Blueprint
-from sqlalchemy import or_, select
-from datetime import datetime, timezone
-from sqlalchemy.exc import IntegrityError
 from flask_jwt_extended import (
+    create_access_token,
+    current_user,
     get_jwt,
     jwt_required,
-    current_user,
-    create_access_token,
 )
+from sqlalchemy import or_, select
+from sqlalchemy.exc import IntegrityError
 
 from app.extensions import db, limiter
 from app.models import TokenBlocklist, User, UserRole
 from app.routers.utils import (
-    json_body,
-    string_value,
-    login_identifier,
     create_token_pair,
+    json_body,
+    login_identifier,
+    string_value,
     validate_register_payload,
 )
-
 
 auth_bp = Blueprint("auth", __name__, url_prefix="/auth")
 
@@ -113,9 +113,7 @@ def refresh():
 @jwt_required(verify_type=False)
 def logout():
     token = get_jwt()
-    expires_at = datetime.fromtimestamp(
-        token.get("sexp", token["exp"]), tz=timezone.utc
-    )
+    expires_at = datetime.fromtimestamp(token.get("sexp", token["exp"]), tz=UTC)
 
     revoked_token = TokenBlocklist(
         jti=token["jti"],
@@ -134,7 +132,7 @@ def logout():
         if token.get("sid"):
             criteria.append(TokenBlocklist.session_id == token["sid"])
         already_revoked = db.session.execute(
-            select(TokenBlocklist.id).where(or_(*criteria))
+            select(TokenBlocklist.id).where(or_(*criteria)).limit(1)
         ).scalar_one_or_none()
         if already_revoked is None:
             raise
