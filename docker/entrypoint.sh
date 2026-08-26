@@ -24,6 +24,7 @@ while True:
 PY
 
     flask --app run.py db upgrade
+    flask --app run.py cleanup-token-blocklist
 fi
 
 exec "$@"

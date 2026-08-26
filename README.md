@@ -11,6 +11,8 @@ and role-based admin protection.
 - PostgreSQL 17
 - SQLAlchemy and Flask-Migrate
 - Flask-JWT-Extended
+- Flask-Limiter
+- Gunicorn
 - uv
 - Ruff
 
@@ -31,12 +33,16 @@ uv sync
 Create a `.env` file:
 
 ```env
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/flask_template
+DATABASE_URL=postgresql://postgres:<database-password>@localhost:5432/flask_template
+POSTGRES_PASSWORD=<database-password>
 SECRET_KEY=<long-random-secret>
 JWT_SECRET_KEY=<long-random-secret>
-FLASK_DEBUG=true
-CORS_ORIGINS=*
+FLASK_DEBUG=false
+CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
+RATELIMIT_STORAGE_URI=memory://
 ```
+
+You can start from the checked-in example with `cp .env.example .env`.
 
 Generate suitable local secrets:
 
@@ -44,9 +50,9 @@ Generate suitable local secrets:
 openssl rand -hex 32
 ```
 
-`DATABASE_URL` is required. `JWT_SECRET_KEY` is required unless `SECRET_KEY` is
-at least 32 bytes. In debug mode only, the app can fall back to development
-secrets.
+`DATABASE_URL` and `SECRET_KEY` are required outside debug mode.
+`JWT_SECRET_KEY` is required unless `SECRET_KEY` is at least 32 bytes. In debug
+mode only, the app can fall back to development secrets.
 
 ## Database
 
@@ -92,17 +98,19 @@ Build and run the API with PostgreSQL:
 docker compose up --build
 ```
 
-The backend waits for PostgreSQL to become healthy, runs migrations, then starts
-Flask on `http://localhost:5000`.
+The backend waits for PostgreSQL to become healthy, runs migrations, removes
+expired revocation records, then starts Gunicorn on `http://localhost:5000`.
 
 Docker Compose starts a `backend` service and a `database` service. The backend
 connects to PostgreSQL through the internal Compose hostname:
 
 ```env
-DATABASE_URL=postgresql://postgres:postgres@database:5432/flask_template
+DATABASE_URL=postgresql://postgres:<database-password>@database:5432/flask_template
 ```
 
-PostgreSQL is exposed to the host on port `5432`.
+The API binds only to `127.0.0.1:5000`. PostgreSQL is available only on the
+internal Compose network. Use a local PostgreSQL installation for host-side
+database access.
 
 Database data is not mounted to a named volume, so recreating the PostgreSQL
 container resets local Docker database state.
@@ -154,7 +162,7 @@ curl -X POST http://localhost:5000/auth/refresh \
   -H "Authorization: Bearer <refresh-token>"
 ```
 
-Logout by revoking the presented access or refresh token:
+Logout with either token. The complete access/refresh session is revoked:
 
 ```bash
 curl -X POST http://localhost:5000/auth/logout \
@@ -168,13 +176,25 @@ GET  /                 Health check
 POST /auth/register    Create a regular user and return token pair
 POST /auth/login       Return the user and token pair
 POST /auth/refresh     Return a new access token from a refresh token
-POST /auth/logout      Revoke the presented access or refresh token
+POST /auth/logout      Revoke the complete access/refresh token session
 GET  /auth/me          Return the current user
 GET  /auth/admin-only  Require an admin user
 ```
 
 Newly registered users use the `regular` role. The base migration creates the
 users and token blocklist tables; it does not seed an admin user.
+
+Registration is limited to 5 requests per hour per client address, and login is
+limited to 10 requests per minute. The in-memory limiter is suitable for the
+default single-worker setup. Configure a shared Flask-Limiter storage URI, such
+as Redis, before running multiple workers or application instances.
+
+Expired revocation records are cleaned hourly during authenticated traffic and
+at container startup. They can also be removed manually:
+
+```bash
+uv run flask --app run.py cleanup-token-blocklist
+```
 
 ## Registration Validation
 
@@ -192,6 +212,12 @@ Run Ruff:
 
 ```bash
 uv run ruff check .
+```
+
+Run the automated tests:
+
+```bash
+uv run pytest
 ```
 
 ## Project Layout
