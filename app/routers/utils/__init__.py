@@ -6,7 +6,6 @@ from .auth import (
     validate_register_payload,
 )
 
-
 __all__ = (
     "create_token_pair",
     "json_body",

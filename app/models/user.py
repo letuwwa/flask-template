@@ -1,7 +1,6 @@
 import enum
 
-from sqlalchemy import Enum
-from sqlalchemy import String
+from sqlalchemy import Enum, String
 from sqlalchemy.orm import Mapped, mapped_column
 from werkzeug.security import check_password_hash, generate_password_hash
 

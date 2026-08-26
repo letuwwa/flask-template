@@ -4,7 +4,6 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.extensions import db
 
-
 index_bp = Blueprint("index", __name__)
 
 

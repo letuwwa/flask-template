@@ -1,6 +1,10 @@
-.venv
-.idea
-
-__pycache__/
-
+.venv/
+.idea/
 .env
+.env.*
+!.env.example
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.coverage

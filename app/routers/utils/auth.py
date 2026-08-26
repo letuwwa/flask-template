@@ -1,12 +1,11 @@
 import re
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from flask import current_app, request
 from flask_jwt_extended import create_access_token, create_refresh_token
 
 from app.models import User
-
 
 EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 USERNAME_PATTERN = re.compile(r"^[a-z0-9_-]+$")
@@ -18,7 +17,7 @@ def create_token_pair(user: User) -> dict[str, str]:
     identity = str(user.id)
     session_id = str(uuid.uuid4())
     refresh_expires = current_app.config["JWT_REFRESH_TOKEN_EXPIRES"]
-    session_expires_at = int((datetime.now(timezone.utc) + refresh_expires).timestamp())
+    session_expires_at = int((datetime.now(UTC) + refresh_expires).timestamp())
     additional_claims = {
         "role": user.role.value,
         "sid": session_id,

@@ -9,4 +9,4 @@ def register_blueprints(app: Flask) -> None:
     app.register_blueprint(auth_bp)
 
 
-__all__ = ("index_bp", "auth_bp", "register_blueprints")
+__all__ = ("auth_bp", "index_bp", "register_blueprints")
