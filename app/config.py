@@ -84,24 +84,26 @@ def _secret_key() -> str:
 
 
 class Config:
-    DEBUG = _env_bool("FLASK_DEBUG")
-    SECRET_KEY = _secret_key()
-    JWT_SECRET_KEY = _jwt_secret_key()
     JWT_ACCESS_TOKEN_EXPIRES = timedelta(minutes=15)
     JWT_REFRESH_TOKEN_EXPIRES = timedelta(days=30)
-    CORS_ORIGINS = _env_csv(
-        "CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000"
-    )
-    RATELIMIT_STORAGE_URI = os.getenv("RATELIMIT_STORAGE_URI", "memory://")
     RATELIMIT_HEADERS_ENABLED = True
-    TOKEN_BLOCKLIST_CLEANUP_INTERVAL = _env_int(
-        "TOKEN_BLOCKLIST_CLEANUP_INTERVAL", 3600, minimum=1
-    )
-    MAX_CONTENT_LENGTH = _env_int("MAX_CONTENT_LENGTH", 1_048_576, minimum=1)
 
     SQLALCHEMY_TRACK_MODIFICATIONS = False
-    SQLALCHEMY_DATABASE_URI = _required_env("DATABASE_URL")
     SQLALCHEMY_ENGINE_OPTIONS: ClassVar[dict[str, int | bool]] = {
         "pool_pre_ping": True,
         "pool_recycle": 300,
     }
+
+    def __init__(self):
+        self.DEBUG = _env_bool("FLASK_DEBUG")
+        self.SECRET_KEY = _secret_key()
+        self.JWT_SECRET_KEY = _jwt_secret_key()
+        self.CORS_ORIGINS = _env_csv(
+            "CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000"
+        )
+        self.RATELIMIT_STORAGE_URI = os.getenv("RATELIMIT_STORAGE_URI", "memory://")
+        self.TOKEN_BLOCKLIST_CLEANUP_INTERVAL = _env_int(
+            "TOKEN_BLOCKLIST_CLEANUP_INTERVAL", 3600, minimum=1
+        )
+        self.MAX_CONTENT_LENGTH = _env_int("MAX_CONTENT_LENGTH", 1_048_576, minimum=1)
+        self.SQLALCHEMY_DATABASE_URI = _required_env("DATABASE_URL")

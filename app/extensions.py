@@ -1,6 +1,6 @@
 import time
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from threading import Lock
 
 import click
@@ -13,6 +13,7 @@ from flask_limiter.util import get_remote_address
 from flask_migrate import Migrate
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import delete, or_, select
+from sqlalchemy.exc import SQLAlchemyError
 from werkzeug.exceptions import RequestEntityTooLarge
 
 cors = CORS()
@@ -57,8 +58,22 @@ def register_extensions(app: Flask) -> None:
 def cleanup_expired_tokens() -> int:
     from app.models import TokenBlocklist
 
+    now = datetime.now(UTC)
+    leeway = timedelta(seconds=current_app.config["JWT_DECODE_LEEWAY"])
+    access_lifetime = current_app.config["JWT_ACCESS_TOKEN_EXPIRES"]
+    if type(access_lifetime) is int:
+        access_lifetime = timedelta(seconds=access_lifetime)
+    # A final refresh can issue an access token beyond the refresh expiry.
+    # Retain old session records too, including their timestamp rounding margin.
+    session_cutoff = now - access_lifetime - 2 * leeway - timedelta(seconds=1)
     result = db.session.execute(
-        delete(TokenBlocklist).where(TokenBlocklist.expires_at <= datetime.now(UTC))
+        delete(TokenBlocklist).where(
+            TokenBlocklist.expires_at <= now - leeway,
+            or_(
+                TokenBlocklist.session_id.is_(None),
+                TokenBlocklist.expires_at <= session_cutoff,
+            ),
+        )
     )
     db.session.commit()
     return result.rowcount or 0
@@ -77,7 +92,7 @@ def _cleanup_expired_tokens_if_due() -> None:
         cleanup_expired_tokens()
         interval = current_app.config["TOKEN_BLOCKLIST_CLEANUP_INTERVAL"]
         current_app.extensions["token_blocklist_cleanup_after"] = now + interval
-    except Exception:
+    except SQLAlchemyError:
         db.session.rollback()
         raise
     finally:

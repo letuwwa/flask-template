@@ -46,6 +46,9 @@ MAX_CONTENT_LENGTH=1048576
 ```
 
 You can start from the checked-in example with `cp .env.example .env`.
+Set `POSTGRES_PASSWORD`, update the password in `DATABASE_URL`, and generate a
+`SECRET_KEY` before starting. The example deliberately leaves secrets empty.
+`JWT_SECRET_KEY` can be left empty to use `SECRET_KEY`.
 
 Generate suitable local secrets:
 
@@ -59,6 +62,14 @@ a clear error instead of silently selecting a potentially unsafe default.
 `JWT_SECRET_KEY`, when set, must also be at least 32 bytes; otherwise the app
 uses `SECRET_KEY` for JWT signing. In debug mode only, the app can fall back to
 development secrets.
+
+Configuration is read and validated for each `create_app()` call. Environment
+variables take precedence over `.env`. Keep `FLASK_DEBUG=false` outside local
+development; debug mode permits predictable development signing keys.
+
+When embedding credentials in `DATABASE_URL`, percent-encode reserved URL
+characters in the username and password. Compose passes credentials separately
+and does not require URL encoding of `POSTGRES_PASSWORD`.
 
 ## Database
 
@@ -123,12 +134,32 @@ The backend waits for PostgreSQL to become healthy, runs migrations, removes
 expired revocation records, then starts Gunicorn as an unprivileged user on
 `http://localhost:5000`.
 
+The container user has a writable home at `/home/app`, which Gunicorn uses for
+its local control socket; the application code remains owned by root.
+
 Docker Compose starts a `backend` service and a `database` service. The backend
 connects to PostgreSQL through the internal Compose hostname:
 
 ```env
-DATABASE_URL=postgresql://<database-user>:<database-password>@database:5432/flask_template
+DATABASE_URL=postgresql://database:5432/flask_template
+PGUSER=<database-user>
+PGPASSWORD=<database-password>
 ```
+
+Compose supplies `PGUSER` and `PGPASSWORD` from `POSTGRES_USER` and
+`POSTGRES_PASSWORD`. These are standard [libpq connection environment
+variables](https://www.postgresql.org/docs/current/libpq-envars.html). This
+avoids parsing passwords as URL or shell syntax. For production deployments,
+consider a mounted password file or secret manager instead of environment
+secrets, and terminate HTTPS at a trusted reverse proxy.
+
+Startup retries database connections for `DATABASE_WAIT_TIMEOUT` seconds
+(default 60), using a monotonic clock and connection timeouts of 2–5 seconds.
+This is a retry budget, not a strict wall-clock deadline: DNS resolution and
+libpq connection attempts may extend it. `TOKEN_BLOCKLIST_CLEANUP_INTERVAL`
+controls cleanup frequency in seconds (default 3600). Both must be positive
+integers. When scaling beyond one container, run migrations once as a separate
+deployment step before starting application replicas.
 
 The API and PostgreSQL ports bind only to `127.0.0.1`. Containers communicate
 over the private Compose network while host-side tools can connect through the
@@ -215,7 +246,16 @@ Request bodies are limited to 1 MiB by default (`MAX_CONTENT_LENGTH`), auth
 responses disable caching, and API responses include MIME-sniffing protection.
 
 Expired revocation records are cleaned hourly during authenticated traffic and
-at container startup. They can also be removed manually:
+at container startup. Session revocations are retained for an additional access
+token lifetime plus clock-skew and rounding margins: a refresh near expiration
+can issue an access token that remains valid afterward. Cleanup also protects
+records written by earlier versions. If changing token lifetimes in code, do
+not shorten the retention window until previously issued tokens have expired.
+Tokens issued before session IDs were introduced can still be logged out, but
+only that individual token can be revoked. Existing records that have already
+been deleted cannot be recovered by this fix.
+
+Revocation records can also be cleaned manually:
 
 ```bash
 uv run flask --app run.py cleanup-token-blocklist
@@ -230,6 +270,11 @@ password    12-128 characters
 first_name  1-30 characters
 last_name   1-30 characters
 ```
+
+Text must be valid UTF-8 and contain no NUL characters. Login rejects passwords
+over 128 characters before hashing. Email and username comparisons normalize
+case and surrounding whitespace. Authorization checks the current database
+role and active status, not the role claim from an old token.
 
 ## Quality
 
@@ -246,14 +291,30 @@ Run the automated tests:
 uv run pytest
 ```
 
+Tests use an isolated in-memory SQLite database and in-memory rate limits by
+default. To exercise PostgreSQL constraints, enums, and migration round trips:
+
+```bash
+uv run pytest --database-url 'postgresql://<user>:<password>@localhost:<port>/<test-db>'
+```
+
+**Use a disposable database only.** This suite creates and drops application
+tables and runs migration downgrades. Never point it at development or
+production data. Migration coverage upgrades and downgrades twice and checks
+the resulting schema against model metadata. No separate type checker is
+configured.
+
 Audit locked dependencies for published vulnerabilities:
 
 ```bash
-uvx pip-audit
+uv export --locked --no-hashes --no-emit-project --format requirements-txt \
+  --output-file /tmp/flask-template-audit-requirements.txt
+uvx pip-audit -r /tmp/flask-template-audit-requirements.txt --no-deps --disable-pip
 ```
 
-The lockfile was refreshed on 2026-08-26. The audit reported no known
-vulnerabilities at that time.
+This audits the pinned runtime and development dependencies without installing
+`pip-audit` into the project. An audit on 2026-08-27 reported no known
+vulnerabilities; this is not a guarantee against undisclosed vulnerabilities.
 
 ## Project Layout
 
@@ -269,6 +330,7 @@ app/models/user.py             User model and roles
 app/models/token_blocklist.py  Revoked JWT storage
 migrations/versions/           Alembic migrations
 docker/entrypoint.sh           Container DB wait and migration startup
+docker/wait_for_db.py          Bounded PostgreSQL connection retries
 docker-compose.yml             Backend and PostgreSQL services
 Dockerfile                     Backend image
 ```

@@ -19,7 +19,7 @@ COPY . .
 RUN uv sync --frozen --no-dev
 
 RUN addgroup --system app \
-    && adduser --system --ingroup app app
+    && adduser --system --ingroup app --home /home/app app
 
 USER app
 

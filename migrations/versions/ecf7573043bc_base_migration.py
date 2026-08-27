@@ -92,4 +92,5 @@ def downgrade():
         batch_op.drop_index(batch_op.f("ix_users_email"))
 
     op.drop_table("users")
+    sa.Enum("ADMIN", "REGULAR", name="user_role").drop(op.get_bind(), checkfirst=True)
     # ### end Alembic commands ###

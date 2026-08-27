@@ -1,6 +1,6 @@
 import re
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from flask import current_app, request
 from flask_jwt_extended import create_access_token, create_refresh_token
@@ -17,6 +17,8 @@ def create_token_pair(user: User) -> dict[str, str]:
     identity = str(user.id)
     session_id = str(uuid.uuid4())
     refresh_expires = current_app.config["JWT_REFRESH_TOKEN_EXPIRES"]
+    if type(refresh_expires) is int:
+        refresh_expires = timedelta(seconds=refresh_expires)
     session_expires_at = int((datetime.now(UTC) + refresh_expires).timestamp())
     additional_claims = {
         "role": user.role.value,
@@ -30,7 +32,7 @@ def create_token_pair(user: User) -> dict[str, str]:
         ),
         "refresh_token": create_refresh_token(
             identity=identity,
-            additional_claims=additional_claims,
+            additional_claims={**additional_claims, "exp": session_expires_at},
         ),
     }
 
@@ -74,9 +76,13 @@ def validate_register_payload(data: dict) -> dict[str, str]:
 
 def string_value(data: dict, key: str) -> str:
     value = data.get(key)
-    if isinstance(value, str):
-        return value
-    return ""
+    if not isinstance(value, str) or "\x00" in value:
+        return ""
+    try:
+        value.encode("utf-8")
+    except UnicodeEncodeError:
+        return ""
+    return value
 
 
 def login_identifier(data: dict) -> str:

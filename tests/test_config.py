@@ -1,5 +1,6 @@
 import pytest
 
+from app import create_app
 from app.config import _env_bool, _env_int, _jwt_secret_key, _secret_key
 
 
@@ -30,3 +31,31 @@ def test_short_jwt_secret_is_rejected(monkeypatch):
 
     with pytest.raises(RuntimeError, match="at least 32 bytes"):
         _jwt_secret_key()
+
+
+def test_factory_reads_current_environment(app, monkeypatch):
+    monkeypatch.setenv("MAX_CONTENT_LENGTH", "2048")
+    monkeypatch.setenv("SECRET_KEY", "different-secret-with-at-least-32-bytes")
+    another = create_app()
+    assert another.config["MAX_CONTENT_LENGTH"] == 2048
+    assert another.config["SECRET_KEY"] != app.config["SECRET_KEY"]
+    assert app.config["MAX_CONTENT_LENGTH"] == 1_048_576
+
+
+def test_factory_revalidates_environment(app, monkeypatch):
+    monkeypatch.setenv("MAX_CONTENT_LENGTH", "0")
+    with pytest.raises(RuntimeError, match="at least 1"):
+        create_app()
+
+
+def test_jwt_secret_falls_back_to_secret_key(monkeypatch):
+    monkeypatch.delenv("JWT_SECRET_KEY", raising=False)
+    monkeypatch.setenv("SECRET_KEY", "test-secret-key-with-at-least-32-bytes")
+    assert _jwt_secret_key() == _secret_key()
+
+
+def test_production_requires_secret(monkeypatch):
+    monkeypatch.delenv("SECRET_KEY", raising=False)
+    monkeypatch.setenv("FLASK_DEBUG", "false")
+    with pytest.raises(RuntimeError, match="required"):
+        _secret_key()

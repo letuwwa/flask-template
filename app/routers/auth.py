@@ -19,6 +19,7 @@ from app.routers.utils import (
     string_value,
     validate_register_payload,
 )
+from app.routers.utils.auth import MAX_PASSWORD_LENGTH
 
 auth_bp = Blueprint("auth", __name__, url_prefix="/auth")
 
@@ -35,7 +36,9 @@ def register():
     username = data["username"].strip().lower()
 
     existing_user = db.session.execute(
-        select(User).where(or_(User.email == email, User.username == username))
+        select(User.id)
+        .where(or_(User.email == email, User.username == username))
+        .limit(1)
     ).scalar_one_or_none()
     if existing_user is not None:
         return {"message": "Email or username is already registered"}, 409
@@ -56,7 +59,9 @@ def register():
     except IntegrityError:
         db.session.rollback()
         existing_user = db.session.execute(
-            select(User.id).where(or_(User.email == email, User.username == username))
+            select(User.id)
+            .where(or_(User.email == email, User.username == username))
+            .limit(1)
         ).scalar_one_or_none()
         if existing_user is None:
             raise
@@ -72,7 +77,11 @@ def login():
     identifier = login_identifier(data)
     password = string_value(data, "password")
 
-    if not identifier or not password:
+    if (
+        not identifier
+        or len(identifier) > 255
+        or not 1 <= len(password) <= MAX_PASSWORD_LENGTH
+    ):
         return {"message": "Invalid credentials"}, 401
 
     user = db.session.execute(
@@ -97,11 +106,11 @@ def refresh():
         return {"message": "User account is disabled"}, 403
 
     token = get_jwt()
-    additional_claims = {
-        "role": current_user.role.value,
-        "sid": token.get("sid"),
-        "sexp": token.get("sexp"),
-    }
+    additional_claims = {"role": current_user.role.value}
+    if token.get("sid"):
+        additional_claims.update(
+            sid=token["sid"], sexp=token.get("sexp") or token["exp"]
+        )
     access_token = create_access_token(
         identity=str(current_user.id),
         additional_claims=additional_claims,
@@ -113,7 +122,9 @@ def refresh():
 @jwt_required(verify_type=False)
 def logout():
     token = get_jwt()
-    expires_at = datetime.fromtimestamp(token.get("sexp", token["exp"]), tz=UTC)
+    expires_at = datetime.fromtimestamp(
+        max(token.get("sexp") or token["exp"], token["exp"]), tz=UTC
+    )
 
     revoked_token = TokenBlocklist(
         jti=token["jti"],
