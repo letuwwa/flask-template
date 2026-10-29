@@ -424,6 +424,78 @@ def test_protected_routes_require_a_valid_token(client, path):
     )
 
 
+@pytest.mark.parametrize("identity", ["not-a-uuid", "", "123"])
+def test_signed_token_with_invalid_identity_is_rejected(client, identity):
+    from flask_jwt_extended import create_access_token
+
+    token = create_access_token(identity=identity)
+    response = client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 401
+
+
+def test_wrong_password_does_not_issue_tokens(client):
+    register(client)
+    response = client.post(
+        "/auth/login", json={**REGISTER_PAYLOAD, "password": "incorrect-password"}
+    )
+    assert response.status_code == 401
+    assert response.get_json() == {"message": "Invalid credentials"}
+
+
+def test_expired_access_token_is_rejected(client):
+    from flask_jwt_extended import create_access_token
+
+    tokens = register(client)
+    token = create_access_token(
+        identity=decode_token(tokens["access_token"])["sub"],
+        expires_delta=timedelta(seconds=-1),
+    )
+    assert (
+        client.get("/auth/me", headers={"Authorization": f"Bearer {token}"}).status_code
+        == 401
+    )
+
+
+def test_logout_handles_concurrent_session_revocation(client, monkeypatch):
+    from app import extensions
+
+    tokens = register(client)
+    token = decode_token(tokens["refresh_token"])
+    db.session.add(
+        TokenBlocklist(
+            jti=token["jti"],
+            session_id=token["sid"],
+            token_type="refresh",
+            user_id=token["sub"],
+            expires_at=datetime.fromtimestamp(token["exp"], UTC),
+        )
+    )
+    db.session.commit()
+    # Model a request whose revocation check completed before the other logout.
+    monkeypatch.setattr(
+        extensions.jwt_manager, "_token_in_blocklist_callback", lambda *_: False
+    )
+    response = client.post(
+        "/auth/logout", headers={"Authorization": f"Bearer {tokens['access_token']}"}
+    )
+    assert response.status_code == 200
+    assert len(db.session.scalars(select(TokenBlocklist)).all()) == 1
+
+
+def test_logout_does_not_hide_unrelated_integrity_errors(client, monkeypatch):
+    tokens = register(client)
+    # Complete scheduled cleanup before simulating an insert failure.
+    headers = {"Authorization": f"Bearer {tokens['access_token']}"}
+    assert client.get("/auth/me", headers=headers).status_code == 200
+
+    def fail_commit():
+        raise IntegrityError("INSERT", {}, Exception("unrelated constraint"))
+
+    monkeypatch.setattr(db.session, "commit", fail_commit)
+    with pytest.raises(IntegrityError):
+        client.post("/auth/logout", headers=headers)
+
+
 @pytest.mark.parametrize(
     ("path", "status"), [("/auth/register", 400), ("/auth/login", 401)]
 )

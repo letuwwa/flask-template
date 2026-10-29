@@ -51,3 +51,31 @@ def test_database_wait_does_not_retry_invalid_dsn(monkeypatch):
     with pytest.raises(psycopg2.ProgrammingError):
         wait_for_db.wait_for_database("invalid")
     connect.assert_called_once()
+
+
+def test_database_wait_script_reads_environment(monkeypatch):
+    import runpy
+
+    connection = Mock()
+    connect = Mock(return_value=connection)
+    monkeypatch.setattr(psycopg2, "connect", connect)
+    monkeypatch.setenv("DATABASE_URL", "postgresql://localhost/script-test")
+    monkeypatch.setenv("DATABASE_WAIT_TIMEOUT", "3")
+    runpy.run_path("docker/wait_for_db.py", run_name="__main__")
+    assert connect.call_args.args == ("postgresql://localhost/script-test",)
+    connection.close.assert_called_once()
+
+
+def test_wsgi_entrypoint_creates_application(app):
+    import runpy
+
+    from app.extensions import db
+
+    namespace = runpy.run_module("run")
+    application = namespace["app"]
+    with application.app_context():
+        try:
+            assert application.test_client().get("/").get_json() == {"status": "ok"}
+        finally:
+            db.session.remove()
+            db.engine.dispose()
