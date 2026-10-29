@@ -422,3 +422,16 @@ def test_protected_routes_require_a_valid_token(client, path):
     assert (
         client.get(path, headers={"Authorization": "Bearer invalid"}).status_code == 422
     )
+
+
+@pytest.mark.parametrize(
+    ("path", "status"), [("/auth/register", 400), ("/auth/login", 401)]
+)
+def test_deeply_nested_json_returns_client_error(client, path, status):
+    response = client.post(
+        path,
+        data="[" * 100_000 + "]" * 100_000,
+        content_type="application/json",
+    )
+    assert response.status_code == status
+    assert response.is_json

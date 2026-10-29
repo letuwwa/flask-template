@@ -38,7 +38,11 @@ def create_token_pair(user: User) -> dict[str, str]:
 
 
 def json_body() -> dict:
-    data = request.get_json(silent=True)
+    try:
+        data = request.get_json(silent=True)
+    except RecursionError:
+        # silent=True handles malformed JSON, but not the decoder's depth limit.
+        return {}
     if not isinstance(data, dict):
         return {}
     return data
