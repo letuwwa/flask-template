@@ -59,7 +59,9 @@ def cleanup_expired_tokens() -> int:
     from app.models import TokenBlocklist
 
     now = datetime.now(UTC)
-    leeway = timedelta(seconds=current_app.config["JWT_DECODE_LEEWAY"])
+    leeway = current_app.config["JWT_DECODE_LEEWAY"]
+    if not isinstance(leeway, timedelta):
+        leeway = timedelta(seconds=leeway)
     access_lifetime = current_app.config["JWT_ACCESS_TOKEN_EXPIRES"]
     if type(access_lifetime) is int:
         access_lifetime = timedelta(seconds=access_lifetime)
@@ -67,13 +69,16 @@ def cleanup_expired_tokens() -> int:
     # Retain old session records too, including their timestamp rounding margin.
     session_cutoff = now - access_lifetime - 2 * leeway - timedelta(seconds=1)
     result = db.session.execute(
-        delete(TokenBlocklist).where(
+        delete(TokenBlocklist)
+        .where(
             TokenBlocklist.expires_at <= now - leeway,
             or_(
                 TokenBlocklist.session_id.is_(None),
                 TokenBlocklist.expires_at <= session_cutoff,
             ),
         )
+        # Let the database compare timestamps; SQLite reloads them without tzinfo.
+        .execution_options(synchronize_session="fetch")
     )
     db.session.commit()
     return result.rowcount or 0
