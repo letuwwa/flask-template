@@ -291,6 +291,18 @@ Run the automated tests:
 uv run pytest
 ```
 
+Measure statement and branch coverage, including the app, startup helper,
+migrations, and WSGI entrypoint:
+
+```bash
+uv run pytest --cov --cov-report=term-missing
+```
+
+Coverage runs enforce an 85% minimum. Tests include regression coverage for
+loaded SQLite revocation records, JWT clock-skew settings, and deeply nested
+JSON request bodies. See [AUDIT_REPORT.md](AUDIT_REPORT.md) for the latest
+stabilization findings and validation results.
+
 Tests use an isolated in-memory SQLite database and in-memory rate limits by
 default. To exercise PostgreSQL constraints, enums, and migration round trips:
 
@@ -313,7 +325,7 @@ uvx pip-audit -r /tmp/flask-template-audit-requirements.txt --no-deps --disable-
 ```
 
 This audits the pinned runtime and development dependencies without installing
-`pip-audit` into the project. An audit on 2026-08-27 reported no known
+`pip-audit` into the project. An audit on 2026-10-29 reported no known
 vulnerabilities; this is not a guarantee against undisclosed vulnerabilities.
 
 ## Project Layout
